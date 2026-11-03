@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PJCBSongServer")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+931b663a0b400acb597a9031b366b14ea92ac577")]
 [assembly: System.Reflection.AssemblyProductAttribute("PJCBSongServer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PJCBSongServer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
