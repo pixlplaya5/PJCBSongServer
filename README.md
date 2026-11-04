@@ -1,5 +1,5 @@
 # PJCBSongServer
-Work-in-progress backend server for Project CloBeats.
+Work-in-progress REST API server for Project CloBeats.
 
 ## Installation
 Installation instructions are currently being tested.
