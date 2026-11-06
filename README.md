@@ -33,6 +33,10 @@ Where should song ZIPs and SQLite data be stored?
 Default: C:\Users\(your Windows username)\AppData\Local\PJCBSongServer_data
 Data directory: 
 
+Allocated data storage limit
+Default: 10 GiB
+Allocated size in GiB:
+
 Administrator username: admin [Make sure you change this on your own server!]
 
 Server listening address
@@ -120,6 +124,8 @@ Invoke-RestMethod `
     -Form $form
 ```
 A successful upload will return a generated unique ID and a `Pending` status.
+Uploads are rejected with HTTP 507 when the data directory is full or the
+uploaded ZIP would exceed its configured allocation.
 
 Your upload will not be public and only be visible to admins until one of them publishes it.
 

@@ -24,6 +24,7 @@ string dataDirectory = settings.DataDirectory;
 Directory.CreateDirectory(dataDirectory);
 
 string dbPath = Path.Combine(dataDirectory, "rhythm.db");
+var uploadStorageLock = new SemaphoreSlim(1, 1);
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -436,6 +437,18 @@ app.MapPost("/api/songs", async (
             new { error = "Only ZIP files are accepted." });
     }
 
+    await uploadStorageLock.WaitAsync();
+    using var uploadLock = new SemaphoreReleaser(uploadStorageLock);
+
+    long currentDataSize = GetDirectorySize(dataDirectory);
+    if (currentDataSize > settings.AllocatedDataSizeBytes ||
+        file.Length > settings.AllocatedDataSizeBytes - currentDataSize)
+    {
+        return Results.Problem(
+            statusCode: StatusCodes.Status507InsufficientStorage,
+            title: "The server's allocated data storage is full.");
+    }
+
     string tempPath = Path.Combine(
         dataDirectory, Guid.NewGuid().ToString("N") + ".tmp");
 
@@ -685,6 +698,27 @@ app.MapDelete("/api/admin/songs/{id}", async (
 
 app.Run();
 
+static long GetDirectorySize(string directory)
+{
+    long total = 0;
+
+    foreach (string path in Directory.EnumerateFiles(
+        directory, "*", SearchOption.AllDirectories))
+    {
+        long fileSize = new FileInfo(path).Length;
+        total = fileSize > long.MaxValue - total
+            ? long.MaxValue
+            : total + fileSize;
+    }
+
+    return total;
+}
+
+public sealed class SemaphoreReleaser(SemaphoreSlim semaphore) : IDisposable
+{
+    public void Dispose() => semaphore.Release();
+}
+
 public sealed class AppDb : DbContext
 {
     public AppDb(DbContextOptions<AppDb> options) : base(options) { }
@@ -764,7 +798,10 @@ public sealed class TextPost
 
 public sealed class ServerSettings
 {
+    private const long BytesPerGibibyte = 1024L * 1024 * 1024;
+
     public string DataDirectory { get; set; } = "";
+    public long AllocatedDataSizeBytes { get; set; } = 10 * BytesPerGibibyte;
     public string ListenUrl { get; set; } =
         "http://127.0.0.1:5080";
 
@@ -802,6 +839,7 @@ public sealed class ServerSettings
                     string.IsNullOrWhiteSpace(settings.JwtKey) ||
                     string.IsNullOrWhiteSpace(settings.AdminUsername) ||
                     string.IsNullOrWhiteSpace(settings.DataDirectory) ||
+                    settings.AllocatedDataSizeBytes <= 0 ||
                     !Directory.Exists(settings.DataDirectory) ||
                     !IsValidListenUrl(settings.ListenUrl) ||
                     !IsValidKey(settings.JwtKey))
@@ -867,7 +905,35 @@ public sealed class ServerSettings
 
         Directory.CreateDirectory(settings.DataDirectory);
 
-        // 2. Admin username (downgraded from email)
+        // 2. Allocated data storage
+        const long maxAllocatedGibibytes = 1_000_000;
+        while (true)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Allocated data storage limit");
+            Console.WriteLine("Default: 10 GiB");
+            Console.Write("Allocated size in GiB: ");
+
+            string? sizeInput = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(sizeInput))
+            {
+                settings.AllocatedDataSizeBytes = 10 * BytesPerGibibyte;
+                break;
+            }
+
+            if (long.TryParse(sizeInput, out long allocatedGibibytes) &&
+                allocatedGibibytes is >= 1 and <= maxAllocatedGibibytes)
+            {
+                settings.AllocatedDataSizeBytes =
+                    allocatedGibibytes * BytesPerGibibyte;
+                break;
+            }
+
+            Console.WriteLine(
+                $"Enter a whole number from 1 to {maxAllocatedGibibytes}, or press Enter for 10 GiB.");
+        }
+
+        // 3. Admin username
         while (true)
         {
             Console.WriteLine();
@@ -885,7 +951,7 @@ public sealed class ServerSettings
             Console.WriteLine("Please enter a valid username.");
         }
 
-        // 3. Listening address
+        // 4. Listening address
         Console.WriteLine();
         Console.WriteLine("Server listening address");
         Console.WriteLine("Default: http://127.0.0.1:5080");
@@ -910,7 +976,7 @@ public sealed class ServerSettings
                 "http://127.0.0.1:5080 and run setup again.");
         }
 
-        // 4. Generate a strong signing key automatically.
+        // 5. Generate a strong signing key automatically.
         byte[] keyBytes = RandomNumberGenerator.GetBytes(48);
         settings.JwtKey = Convert.ToBase64String(keyBytes);
 
