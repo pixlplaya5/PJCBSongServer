@@ -145,7 +145,7 @@ string CreateToken(AppUser user)
     var claims = new[]
     {
         new Claim(ClaimTypes.NameIdentifier, user.Id),
-        new Claim(ClaimTypes.Email, user.Email),
+        new Claim(ClaimTypes.Name, user.Username),
         new Claim(ClaimTypes.Role, user.Role)
     };
 
@@ -173,17 +173,14 @@ app.MapPost("/api/auth/register", async (
     AppDb db,
     PasswordHasher<AppUser> hasher) =>
 {
-    string email = (input.Email ?? "").Trim().ToLowerInvariant();
+    string username = (input.Username ?? "").Trim().ToLowerInvariant();
     string password = input.Password ?? "";
 
-    if (email.Length is < 5 or > 254 ||
-        !System.Net.Mail.MailAddress.TryCreate(email, out var address) ||
-        !string.Equals(address.Address, email,
-            StringComparison.OrdinalIgnoreCase))
+    if (username.Length is < 5 or > 254)
     {
         return Results.BadRequest(new
         {
-            error = "A valid email address is required."
+            error = "A valid username is required."
         });
     }
 
@@ -193,24 +190,22 @@ app.MapPost("/api/auth/register", async (
             error = "Password must be 12-128 characters."
         });
 
-    if (await db.Users.AnyAsync(u => u.Email == email))
+    if (await db.Users.AnyAsync(u => u.Username == username))
         return Results.Conflict(new
         {
-            error = "An account with this email already exists."
+            error = "An account with this username already exists."
         });
 
-    bool isAdmin =
-        settings.AdminBootstrapPending &&
-        string.Equals(
-            email,
-            settings.AdminEmail,
+    bool isAdmin = string.Equals(
+            username,
+            settings.AdminUsername,
             StringComparison.OrdinalIgnoreCase) &&
         !await db.Users.AnyAsync(u => u.Role == "Admin");
 
     var user = new AppUser
     {
         Id = Guid.NewGuid().ToString("N"),
-        Email = email,
+        Username = username,
         Role = isAdmin ? "Admin" : "Player"
     };
 
@@ -221,16 +216,16 @@ app.MapPost("/api/auth/register", async (
 
     if (isAdmin)
     {
-        settings.AdminBootstrapPending = false;
+        //settings.AdminBootstrapPending = false;
 
-        await ServerSettings.SaveAsync(
-            settingsPath, settings);
+        //await ServerSettings.SaveAsync(
+        //   settingsPath, settings);
     }
 
     return Results.Created("/api/me", new
     {
         id = user.Id,
-        email = user.Email,
+        username = user.Username,
         role = user.Role
     });
 })
@@ -243,10 +238,10 @@ app.MapPost("/api/auth/login", async (
     AppDb db,
     PasswordHasher<AppUser> hasher) =>
 {
-    string email = (input.Email ?? "").Trim().ToLowerInvariant();
+    string username = (input.Username ?? "").Trim().ToLowerInvariant();
 
     var user = await db.Users.FirstOrDefaultAsync(
-        u => u.Email == email);
+        u => u.Username == username);
 
     if (user == null)
         return Results.Unauthorized();
@@ -332,6 +327,52 @@ app.MapGet("/api/songs", async (
         pageSize = size,
         total,
         songs
+    });
+})
+.AllowAnonymous();
+
+// LIST USER POSTS (BETA)
+app.MapGet("/api/posts", async (
+    AppDb db, string? search, int? page, int? pageSize) =>
+{
+    int p = Math.Clamp(page ?? 1, 1, 1000000);
+    int size = Math.Clamp(pageSize ?? 20, 1, 100);
+
+    var query = db.TextPosts.AsNoTracking()
+        .Where(s => s.Status == "Published");
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        string term = search.Trim()[..Math.Min(
+            search.Trim().Length, 100)];
+
+        query = query.Where(s =>
+            s.Value.Contains(term) ||
+            s.PostedBy.Contains(term));
+    }
+
+    int total = await query.CountAsync();
+
+    var posts = await query
+        .OrderBy(s => s.Value)
+        .ThenBy(s => s.Id)
+        .Skip((p - 1) * size)
+        .Take(size)
+        .Select(s => new
+        {
+            s.Id,
+            s.Value,
+            s.PostedBy,
+            s.CreatedUtc
+        })
+        .ToListAsync();
+
+    return Results.Ok(new
+    {
+        page = p,
+        pageSize = size,
+        total,
+        posts
     });
 })
 .AllowAnonymous();
@@ -460,7 +501,7 @@ app.MapPost("/api/songs", async (
             }
 
             var metadataEntry = archive.GetEntry("song.json");
-            var chartEntry = archive.GetEntry("notes.mid");
+            var chartEntry = archive.GetEntry("notes.mid") ?? archive.GetEntry("notes.chart");
 
             bool hasAudio = archive.Entries.Any(e =>
                 new[] { ".ogg", ".mp3", ".wav" }
@@ -472,7 +513,7 @@ app.MapPost("/api/songs", async (
             {
                 return Results.BadRequest(new
                 {
-                    error = "ZIP must contain song.json, notes.mid, and compatible audio."
+                    error = "ZIP must contain song.json, notes.mid/notes.chart, and compatible audio."
                 });
             }
 
@@ -650,22 +691,27 @@ public sealed class AppDb : DbContext
 
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<Song> Songs => Set<Song>();
+    public DbSet<TextPost> TextPosts => Set<TextPost>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
         model.Entity<AppUser>().HasKey(u => u.Id);
-        model.Entity<AppUser>().HasIndex(u => u.Email).IsUnique();
+        model.Entity<AppUser>().HasIndex(u => u.Username).IsUnique();
 
         model.Entity<Song>().HasKey(s => s.Id);
         model.Entity<Song>().HasIndex(s => s.Status);
         model.Entity<Song>().HasIndex(s => s.Title);
+
+        model.Entity<TextPost>().HasKey(p => p.Id);
+        model.Entity<TextPost>().HasIndex(p => p.Status);
+        model.Entity<TextPost>().HasIndex(p => p.Value);
     }
 }
 
 public sealed class AppUser
 {
     public string Id { get; set; } = "";
-    public string Email { get; set; } = "";
+    public string Username { get; set; } = "";
     public string PasswordHash { get; set; } = "";
     public string Role { get; set; } = "Player";
 }
@@ -696,14 +742,23 @@ public sealed class SongManifest
 
 public sealed class RegisterRequest
 {
-    public string? Email { get; set; }
+    public string? Username { get; set; }
     public string? Password { get; set; }
 }
 
 public sealed class LoginRequest
 {
-    public string? Email { get; set; }
+    public string? Username { get; set; }
     public string? Password { get; set; }
+}
+
+public sealed class TextPost
+{
+    public string Id { get; set; } = "";
+    public string Value { get; set; } = "";
+    public string PostedBy { get; set; } = "";
+    public string Status { get; set; } = "Pending";
+    public DateTime CreatedUtc { get; set; }
 }
 
 
@@ -714,11 +769,11 @@ public sealed class ServerSettings
         "http://127.0.0.1:5080";
 
     public string JwtKey { get; set; } = "";
-    public string AdminEmail { get; set; } = "";
+    public string AdminUsername { get; set; } = "";
 
     // Allows the configured email to claim the first admin account
     // exactly once, rather than on every restart.
-    public bool AdminBootstrapPending { get; set; } = true;
+    //public bool AdminBootstrapPending { get; set; } = true;
 
     private static readonly JsonSerializerOptions JsonOptions =
         new()
@@ -745,7 +800,7 @@ public sealed class ServerSettings
 
                 if (settings == null ||
                     string.IsNullOrWhiteSpace(settings.JwtKey) ||
-                    string.IsNullOrWhiteSpace(settings.AdminEmail) ||
+                    string.IsNullOrWhiteSpace(settings.AdminUsername) ||
                     string.IsNullOrWhiteSpace(settings.DataDirectory) ||
                     !Directory.Exists(settings.DataDirectory) ||
                     !IsValidListenUrl(settings.ListenUrl) ||
@@ -812,27 +867,22 @@ public sealed class ServerSettings
 
         Directory.CreateDirectory(settings.DataDirectory);
 
-        // 2. Admin email
+        // 2. Admin username (downgraded from email)
         while (true)
         {
             Console.WriteLine();
-            Console.Write("Administrator email address: ");
+            Console.Write("Administrator username: ");
 
-            string email = (Console.ReadLine() ?? "")
+            string username = (Console.ReadLine() ?? "")
                 .Trim().ToLowerInvariant();
 
-            if (email.Length <= 254 &&
-                System.Net.Mail.MailAddress.TryCreate(
-                    email, out var address) &&
-                string.Equals(
-                    address.Address, email,
-                    StringComparison.OrdinalIgnoreCase))
+            if (username.Length <= 254)
             {
-                settings.AdminEmail = email;
+                settings.AdminUsername = username;
                 break;
             }
 
-            Console.WriteLine("Please enter a valid email address.");
+            Console.WriteLine("Please enter a valid username.");
         }
 
         // 3. Listening address
@@ -864,7 +914,7 @@ public sealed class ServerSettings
         byte[] keyBytes = RandomNumberGenerator.GetBytes(48);
         settings.JwtKey = Convert.ToBase64String(keyBytes);
 
-        settings.AdminBootstrapPending = true;
+        //settings.AdminBootstrapPending = true;
 
         // Save only after all setup values have been collected.
         await SaveAsync(settingsPath, settings);
@@ -926,6 +976,13 @@ public sealed class ServerSettings
             && uri.Query.Length == 0
             && uri.Fragment.Length == 0
             && uri.AbsolutePath == "/";
+    }
+
+    private static string SanitizeString(string? input)
+    {
+        if (input != null)
+            return new String(input.Where(Char.IsLetterOrDigit).ToArray());
+        return string.Empty;
     }
 }
 
