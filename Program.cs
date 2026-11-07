@@ -163,16 +163,13 @@ string CreateToken(AppUser user)
     return new JwtSecurityTokenHandler().WriteToken(token);
 }
 
-app.MapGet("/", () => 
+app.MapGet("/", () =>
 {
-    if (File.Exists(Path.Combine(AppContext.BaseDirectory, "index.html")))
-    {
-        Results.Ok(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "index.html")));
-    }
-    else
-    {
-        Results.Ok("Nothing to see here");
-    }
+    string indexPath = Path.Combine(AppContext.BaseDirectory, "index.html");
+
+    return File.Exists(indexPath)
+        ? Results.File(indexPath, "text/html; charset=utf-8")
+        : Results.Content("Nothing to see here", "text/plain");
 });
 
 app.MapGet("/api/health", () => Results.Ok(new

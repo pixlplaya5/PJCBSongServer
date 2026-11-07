@@ -62,6 +62,7 @@ Settings loaded successfully.
 ## Endpoints
 | HTTP Method | URI Endpoint | Permission | Usage |
 | ----------- | ------------ | ---------- | ----- |
+| GET | / | Public | Main landing page |
 | GET | /api/health | Public | Retrieve server's health |
 | GET | /api/lpRand | Public | Retrieve random post as loading phrase |
 | POST | /api/auth/register | Public (rate-limited) | Register user
