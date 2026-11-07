@@ -163,6 +163,18 @@ string CreateToken(AppUser user)
     return new JwtSecurityTokenHandler().WriteToken(token);
 }
 
+app.MapGet("/", () => 
+{
+    if (File.Exists(Path.Combine(AppContext.BaseDirectory, "index.html")))
+    {
+        Results.Ok(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "index.html")));
+    }
+    else
+    {
+        Results.Ok("Nothing to see here");
+    }
+});
+
 app.MapGet("/api/health", () => Results.Ok(new
 {
     status = "online"
@@ -377,6 +389,32 @@ app.MapGet("/api/posts", async (
     });
 })
 .AllowAnonymous();
+
+// GET POST BY ID
+app.MapGet("/api/posts/{id}", async (
+    string id, AppDb db) =>
+{
+    if (!Guid.TryParseExact(id, "N", out _))
+        return Results.BadRequest();
+
+    var post = await db.TextPosts.AsNoTracking()
+        .Where(s => s.Id == id && s.Status == "Published")
+        .Select(s => new
+        {
+            s.Id,
+            s.Value,
+            s.PostedBy,
+            s.CreatedUtc
+        })
+        .FirstOrDefaultAsync();
+
+    return post == null
+        ? Results.NotFound()
+        : Results.Ok(post);
+})
+.AllowAnonymous();
+
+app.MapGet("/api/lpRand", () => Results.Ok("TODO: get random post value"));
 
 // SONG DETAILS
 app.MapGet("/api/songs/{id}", async (

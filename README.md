@@ -63,6 +63,7 @@ Settings loaded successfully.
 | HTTP Method | URI Endpoint | Permission | Usage |
 | ----------- | ------------ | ---------- | ----- |
 | GET | /api/health | Public | Retrieve server's health |
+| GET | /api/lpRand | Public | Retrieve random post as loading phrase |
 | POST | /api/auth/register | Public (rate-limited) | Register user
 | POST | /api/auth/login | Public (rate-limited) | Sign in user |
 | GET | /api/songs | Public | Retrieve song list |
@@ -70,6 +71,10 @@ Settings loaded successfully.
 | GET | /api/songs/{id} | Public | Retrieve song by its ID |
 | GET | /api/songs/{id}/download | Public | Retrieve song by its ID to a .zip file |
 | POST | /api/songs | Registered players | Upload .zip to song list |
+| GET | /api/posts | Public | Retrieve post list |
+| GET | /api/posts?search={query} | Public | Retrieve post list by search query |
+| GET | /api/posts/{id} | Public | Retrieve post by its ID |
+| POST | /api/posts | Registered players | Upload post |
 | GET | /api/me | Registered players | Retrieve currently signed-in player |
 | GET | /api/admin/songs/pending | Admin-only | Retrieve pending song list |
 | POST | /api/admin/songs/{id}/publish | Admin-only | Publish song by its ID |
